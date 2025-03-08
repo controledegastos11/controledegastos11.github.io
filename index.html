@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Pagamentos</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f4f4f4; flex-direction: column; }
+        .container { width: 90%; max-width: 600px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); margin-top: 60px; }
+        h2 { margin-bottom: 15px; color: #333; }
+        input, select, button { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; }
+        button { background: #28a745; color: white; cursor: pointer; border: none; }
+        button:hover { background: #218838; }
+        .hidden { display: none; }
+        .produto, .parcela { border: 1px solid #ddd; padding: 10px; margin-top: 10px; background: #fff; border-radius: 5px; position: relative; }
+        .paga { text-decoration: line-through; color: #888; }
+        .voltar { background: #007bff; }
+        .voltar:hover { background: #0056b3; }
+        .editar { background: #ffc107; }
+        .editar:hover { background: #e0a800; }
+        .excluir { background: #dc3545; }
+        .excluir:hover { background: #c82333; }
+        #irParaPagamentos { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background: #007bff; color: white; border: none; padding: 10px 20px; cursor: pointer; z-index: 10; }
+        #irParaPagamentos:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <button id="irParaPagamentos" onclick="mostrarPagina('paginaPagamentos')">Ir para Pagamentos</button>
+
+    <div id="paginaPrincipal" class="container">
+        <h2>Cadastro de Produto</h2>
+        <input type="text" id="descricao" placeholder="Descrição do Produto">
+        <input type="number" id="valor" placeholder="Valor Total">
+        <select id="tipoPagamento">
+            <option value="avista">À Vista</option>
+            <option value="parcelado">Parcelado</option>
+        </select>
+        <input type="number" id="parcelas" placeholder="Quantidade de Parcelas" class="hidden">
+        <button onclick="adicionarProduto()">Adicionar Produto</button>
+
+        <h2>Pesquisar Produto</h2>
+        <input type="text" id="pesquisa" placeholder="Digite para pesquisar..." oninput="filtrarProdutos()">
+
+        <h2>Produtos Cadastrados</h2>
+        <div id="listaProdutos"></div>
+
+        <h2>Valor a Pagar no Próximo Mês</h2>
+        <p id="valorMensal">R$ 0,00</p>
+    </div>
+
+    <div id="paginaPagamentos" class="container hidden">
+        <h2>Selecione um Produto</h2>
+        <select id="selecaoProduto" onchange="mostrarParcelas()"></select>
+        <h2>Parcelas</h2>
+        <div id="listaParcelas"></div>
+        <button class="voltar" onclick="mostrarPagina('paginaPrincipal')">Voltar</button>
+    </div>
+
+    <script>
+        let produtos = JSON.parse(localStorage.getItem("produtos")) || [];
+
+        function salvarProdutos() {
+            localStorage.setItem("produtos", JSON.stringify(produtos));
+            atualizarValorMensal();
+        }
+
+        function adicionarProduto() {
+            let descricao = document.getElementById("descricao").value.trim();
+            let valor = parseFloat(document.getElementById("valor").value);
+            let tipoPagamento = document.getElementById("tipoPagamento").value;
+            let parcelas = tipoPagamento === "parcelado" ? parseInt(document.getElementById("parcelas").value) : 1;
+
+            if (!descricao || isNaN(valor) || valor <= 0 || isNaN(parcelas) || parcelas < 1) {
+                alert("Preencha todos os campos corretamente!");
+                return;
+            }
+
+            let produto = {
+                id: Date.now(),
+                descricao,
+                valor,
+                tipoPagamento,
+                parcelas,
+                data: new Date().toLocaleDateString(),
+                parcelasPagas: Array(parcelas).fill({ paga: false, data: null })
+            };
+
+            produtos.push(produto);
+            salvarProdutos();
+            atualizarListaProdutos();
+        }
+
+        function atualizarListaProdutos() {
+            let lista = document.getElementById("listaProdutos");
+            lista.innerHTML = "";
+
+            produtos.forEach((produto, index) => {
+                let div = document.createElement("div");
+                div.classList.add("produto");
+                if (produto.parcelasPagas.every(p => p.paga)) {
+                    div.classList.add("paga");
+                }
+                div.innerHTML = `
+                    <strong>${produto.descricao}</strong><br>
+                    Valor: R$${produto.valor.toFixed(2)}<br>
+                    Tipo: ${produto.tipoPagamento === "avista" ? "À Vista" : "Parcelado"}<br>
+                    Parcelas: ${produto.parcelas}<br>
+                    Data: ${produto.data}<br>
+                    <button class="editar" onclick="editarProduto(${index})">Editar</button>
+                    <button class="excluir" onclick="excluirProduto(${index})">Excluir</button>
+                `;
+                lista.appendChild(div);
+            });
+
+            atualizarSelecaoProdutos();
+        }
+
+        function filtrarProdutos() {
+            let termo = document.getElementById("pesquisa").value.toLowerCase();
+            let lista = document.getElementById("listaProdutos").children;
+
+            for (let item of lista) {
+                let descricao = item.querySelector("strong").textContent.toLowerCase();
+                item.style.display = descricao.includes(termo) ? "block" : "none";
+            }
+        }
+
+        function editarProduto(index) {
+            let produto = produtos[index];
+
+            document.getElementById("descricao").value = produto.descricao;
+            document.getElementById("valor").value = produto.valor;
+            document.getElementById("tipoPagamento").value = produto.tipoPagamento;
+            document.getElementById("parcelas").value = produto.parcelas;
+            document.getElementById("parcelas").classList.toggle("hidden", produto.tipoPagamento === "avista");
+
+            excluirProduto(index);
+        }
+
+        function atualizarSelecaoProdutos() {
+            let selecao = document.getElementById("selecaoProduto");
+            selecao.innerHTML = "";
+            produtos.forEach((produto, index) => {
+                let option = document.createElement("option");
+                option.value = index;
+                option.textContent = produto.descricao;
+                selecao.appendChild(option);
+            });
+        }
+
+        function excluirProduto(index) {
+            produtos.splice(index, 1);
+            salvarProdutos();
+            atualizarListaProdutos();
+        }
+
+        function mostrarPagina(pagina) {
+            document.getElementById("paginaPrincipal").classList.add("hidden");
+            document.getElementById("paginaPagamentos").classList.add("hidden");
+            document.getElementById(pagina).classList.remove("hidden");
+
+            if (pagina === "paginaPagamentos") mostrarParcelas();
+        }
+
+        document.getElementById("tipoPagamento").addEventListener("change", function() {
+            document.getElementById("parcelas").classList.toggle("hidden", this.value === "avista");
+        });
+
+        function mostrarParcelas() {
+            let selecao = document.getElementById("selecaoProduto");
+            let indexProduto = selecao.value;
+            let produto = produtos[indexProduto];
+
+            let listaParcelas = document.getElementById("listaParcelas");
+            listaParcelas.innerHTML = "";
+
+            if (produto.tipoPagamento === "avista") {
+                let div = document.createElement("div");
+                div.classList.add("parcela");
+                div.innerHTML = `
+                    <strong>Pagamento à Vista</strong><br>
+                    Valor Total: R$${produto.valor.toFixed(2)}<br>
+                    Data de Pagamento: ${produto.parcelasPagas[0].data || "Não Pago"}<br>
+                    <button onclick="realizarPagamento(${indexProduto})">Pagar</button>
+                `;
+                listaParcelas.appendChild(div);
+            } else {
+                produto.parcelasPagas.forEach((parcela, index) => {
+                    let div = document.createElement("div");
+                    div.classList.add("parcela");
+                    if (parcela.paga) {
+                        div.classList.add("paga");
+                    }
+                    div.innerHTML = `
+                        <strong>Parcela ${index + 1}</strong><br>
+                        Valor: R$${(produto.valor / produto.parcelas).toFixed(2)}<br>
+                        Data de Pagamento: ${parcela.data || "Não Pago"}<br>
+                        <button onclick="realizarPagamento(${indexProduto}, ${index})" ${parcela.paga ? "disabled" : ""}>Pagar</button>
+                    `;
+                    listaParcelas.appendChild(div);
+                });
+            }
+        }
+
+        function realizarPagamento(indexProduto, indexParcela = 0) {
+            let produto = produtos[indexProduto];
+            let dataPagamento = new Date().toLocaleDateString();
+
+            if (produto.tipoPagamento === "avista") {
+                produto.parcelasPagas[0] = { paga: true, data: dataPagamento };
+            } else {
+                produto.parcelasPagas[indexParcela] = { paga: true, data: dataPagamento };
+            }
+
+            salvarProdutos();
+            mostrarParcelas();
+            atualizarListaProdutos();
+        }
+
+        function atualizarValorMensal() {
+            let valorMensal = 0;
+            produtos.forEach(produto => {
+                if (produto.tipoPagamento === "avista") {
+                    valorMensal += produto.valor;
+                } else {
+                    let valorParcela = produto.valor / produto.parcelas;
+                    if (!produto.parcelasPagas.every(p => p.paga)) {
+                        valorMensal += valorParcela;
+                    }
+                }
+            });
+            document.getElementById("valorMensal").textContent = `R$ ${valorMensal.toFixed(2)}`;
+        }
+
+        atualizarListaProdutos();
+    </script>
+</body>
+</html>
